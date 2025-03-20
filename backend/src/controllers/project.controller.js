@@ -1109,7 +1109,16 @@ exports.getProjectDocuments = async (req, res) => {
 exports.uploadDocument = async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { name, description, fileUrl, fileType, fileSize } = req.body;
+    
+    // Verificar si hay un archivo subido
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+    
+    const { name, description } = req.body;
     
     // Check if project exists
     const project = await Project.findById(projectId);
@@ -1122,26 +1131,34 @@ exports.uploadDocument = async (req, res) => {
     
     // Create new document
     const document = new Document({
-      name,
+      name: name || req.file.originalname,
       description,
-      fileUrl,
-      fileType,
-      fileSize,
+      fileName: req.file.filename,
+      originalName: req.file.originalname,
+      filePath: req.file.path,
+      fileType: req.file.mimetype,
+      fileSize: req.file.size,
       project: projectId,
       uploadedBy: req.user.id
     });
     
     await document.save();
     
-    // Add activity to project
-    project.activity.push({
-      action: 'document_uploaded',
-      user: req.user.id,
-      timestamp: Date.now(),
-      details: { documentId: document._id, documentName: name }
-    });
-    
-    await project.save();
+    // Registrar actividad en el log de auditoría
+    try {
+      await AuditLog.create({
+        action: 'create',
+        entityType: 'document',
+        entityId: document._id,
+        userId: req.user.id,
+        details: {
+          documentName: document.name,
+          projectId: projectId
+        }
+      });
+    } catch (auditError) {
+      console.error('Error al registrar actividad de documento:', auditError);
+    }
     
     res.status(201).json({
       success: true,
@@ -1218,15 +1235,21 @@ exports.deleteDocument = async (req, res) => {
       });
     }
     
-    // Add activity to project
-    project.activity.push({
-      action: 'document_deleted',
-      user: req.user.id,
-      timestamp: Date.now(),
-      details: { documentName: document.name }
-    });
-    
-    await project.save();
+    // Registrar actividad en el log de auditoría
+    try {
+      await AuditLog.create({
+        action: 'delete',
+        entityType: 'document',
+        entityId: documentId,
+        userId: req.user.id,
+        details: {
+          documentName: document.name,
+          projectId: projectId
+        }
+      });
+    } catch (auditError) {
+      console.error('Error al registrar eliminación de documento:', auditError);
+    }
     
     res.status(200).json({
       success: true,

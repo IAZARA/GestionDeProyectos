@@ -6,6 +6,8 @@ const wikiController = require('../controllers/wiki.controller');
 const { authenticate, isAdmin, isAdminOrManager } = require('../middlewares/auth');
 const { isProjectMember, isProjectManager } = require('../middlewares/projectAccess');
 const auditLogger = require('../middlewares/auditLogger');
+const upload = require('../middlewares/upload');
+const handleUploadErrors = require('../middlewares/uploadErrorHandler');
 
 // Middleware para registrar actividad en proyectos
 const projectAudit = auditLogger({ entityType: 'project', entityIdParam: 'projectId' });
@@ -68,7 +70,7 @@ router.delete('/:projectId/wiki/:wikiId', authenticate, isProjectMember, wikiAud
 
 // Project documents
 router.get('/:projectId/documents', authenticate, isProjectMember, projectController.getProjectDocuments);
-router.post('/:projectId/documents', authenticate, isProjectMember, documentAudit, projectController.uploadDocument);
+router.post('/:projectId/documents', authenticate, isProjectMember, upload.single('file'), handleUploadErrors, documentAudit, projectController.uploadDocument);
 router.get('/:projectId/documents/:documentId', authenticate, isProjectMember, projectController.getDocumentById);
 router.delete('/:projectId/documents/:documentId', authenticate, isProjectMember, documentAudit, projectController.deleteDocument);
 

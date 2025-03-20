@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { getProjectById, getProjectStats, getProjectActivity, updateProjectStatus } from '../../services/project.service';
-import { getDocumentsByProject, downloadDocument } from '../../services/document.service';
+import { getDocumentsByProject, downloadDocument, deleteDocument } from '../../services/document.service';
 import { getWikiPages, createWikiPage, updateWikiPage } from '../../services/wiki.service';
 import { getProjectTasks, updateTaskStatus } from '../../services/task.service';
 import UploadDocumentModal from '../../components/documents/UploadDocumentModal';
@@ -363,6 +363,23 @@ const ProjectDetailPage = () => {
     }
   };
 
+  // Función para obtener tareas del proyecto
+  const fetchProjectTasks = useCallback(async () => {
+    try {
+      const tasksData = await getProjectTasks(projectId);
+      // Mapear los estados al cargar las tareas
+      const tasksWithBackendStatus = (tasksData || []).map(task => ({
+        ...task,
+        backendStatus: STATUS_MAP_TO_BACKEND[task.status] || task.status
+      }));
+      setTasks(tasksWithBackendStatus);
+      return tasksWithBackendStatus;
+    } catch (error) {
+      console.error('Error al cargar tareas del proyecto:', error);
+      return [];
+    }
+  }, [projectId]);
+
   useEffect(() => {
     const fetchProjectData = async () => {
       try {
@@ -375,11 +392,10 @@ const ProjectDetailPage = () => {
         }
         
         // Obtener datos principales del proyecto
-        const [projectData, statsData, activityData, tasksData] = await Promise.all([
+        const [projectData, statsData, activityData] = await Promise.all([
           getProjectById(projectId),
           getProjectStats(projectId),
-          getProjectActivity(projectId),
-          getProjectTasks(projectId)
+          getProjectActivity(projectId)
         ]);
         
         if (!projectData) {
@@ -391,13 +407,9 @@ const ProjectDetailPage = () => {
         setProject(projectData);
         setStats(statsData || { totalTareas: 0, tareasCompletadas: 0, tareasPendientes: 0, progreso: 0 });
         setActivity(activityData || []);
-        // Mapear los estados al cargar las tareas
-        const tasksWithBackendStatus = (tasksData || []).map(task => ({
-          ...task,
-          backendStatus: STATUS_MAP_TO_BACKEND[task.status] || task.status
-        }));
-
-        setTasks(tasksWithBackendStatus);
+        
+        // Cargar tareas usando nuestra función
+        await fetchProjectTasks();
         
         // Obtener documentos del proyecto
         try {
@@ -427,7 +439,7 @@ const ProjectDetailPage = () => {
     if (projectId) {
       fetchProjectData();
     }
-  }, [projectId]);
+  }, [projectId, fetchProjectTasks]);
 
   const handleStatusChange = async (status) => {
     try {
@@ -457,21 +469,11 @@ const ProjectDetailPage = () => {
         )
       );
 
-      // Actualizar en el servidor primero
+      // Actualizar en el servidor
       await updateTaskStatus(taskId, destinationStatus);
 
-      // Actualizar estado local y backendStatus después de la actualización del servidor
-      setTasks(prevTasks => 
-        prevTasks.map(task => 
-          task._id === taskId 
-            ? {
-                ...task, 
-                status: destinationStatus,
-                backendStatus: STATUS_MAP_TO_BACKEND[destinationStatus] || destinationStatus
-              }
-            : task
-        )
-      );
+      // Recargar todas las tareas para asegurar sincronización
+      await fetchProjectTasks();
       
       // Obtener las estadísticas actualizadas del servidor
       await fetchProjectStats(true);
@@ -486,7 +488,7 @@ const ProjectDetailPage = () => {
         )
       );
       // Recargar estadísticas del servidor
-      fetchProjectStats(true);
+      await fetchProjectStats(true);
     }
   };
   
@@ -513,41 +515,17 @@ const ProjectDetailPage = () => {
   const handleTaskCreated = async (newTask) => {
     console.log('Tarea creada recibida:', newTask);
     
-    
-    // Adaptar la tarea para el frontend
-    const adaptedTask = {
-      ...newTask,
-      status: STATUS_MAP_FROM_BACKEND[newTask.status] || newTask.status,
-      titulo: newTask.titulo || newTask.title,
-      descripcion: newTask.descripcion || newTask.description
-    };
-    
-    // Actualizar el estado local inmediatamente para UI responsiva
-    setTasks(prevTasks => [...prevTasks, adaptedTask]);
-
-
-    // Adaptar la tarea con el estado del backend
-    adaptedTask.backendStatus = STATUS_MAP_TO_BACKEND[adaptedTask.status] || adaptedTask.status;
-
-    // Calcular y actualizar estadísticas localmente
-    const updatedTasks = [...tasks, adaptedTask];
-    const totalTasks = updatedTasks.length;
-    const completedTasks = updatedTasks.filter(t => 
-      t.backendStatus === 'Completed' || t.status === 'Completado'
-    ).length;
-    setStats(prev => ({
-      ...prev,
-      totalTareas: totalTasks,
-      tareasCompletadas: completedTasks,
-      tareasPendientes: totalTasks - completedTasks,
-      progreso: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-    }));
-
-    // Actualizar datos desde el servidor
     try {
+      // Recargar todas las tareas para asegurar que tenemos la lista completa actualizada
+      await fetchProjectTasks();
+      
+      // Actualizar datos desde el servidor
       await fetchProjectStats(true);
+      
+      // Mostrar mensaje de éxito o realizar alguna acción adicional si es necesario
+      console.log('Tareas actualizadas después de crear una nueva tarea');
     } catch (error) {
-      console.error('Error al actualizar estadísticas después de crear tarea:', error);
+      console.error('Error al actualizar datos después de crear tarea:', error);
     }
   };
 
@@ -674,62 +652,23 @@ const ProjectDetailPage = () => {
   }, [projectId, fetchProjectActivity]);
 
   // Función para manejar la eliminación de tareas
-  const handleTaskDeleted = (taskId) => {
+  const handleTaskDeleted = async (taskId) => {
     console.log(`[handleTaskDeleted] INICIANDO - Tarea marcada como eliminada: ${taskId} del proyecto ID: ${projectId}`);
     
     try {
-      // Verificar que la tarea existe en el estado actual
-      const taskExists = tasks.some(task => task._id === taskId);
-      if (!taskExists) {
-        console.warn(`[handleTaskDeleted] La tarea ${taskId} no existe en el estado actual`);
-        return;
-      }
-
-      // Prueba directa - Eliminar por completo la tarea del estado
-      // En lugar de solo marcarla como eliminada
-      console.log('[handleTaskDeleted] Aplicando la estrategia de ELIMINAR la tarea del estado completamente');
-      const filteredTasks = tasks.filter(task => task._id !== taskId);
-      
-      console.log(`[handleTaskDeleted] Comparación de tareas: Original: ${tasks.length}, Filtradas: ${filteredTasks.length}`);
-      console.log('[handleTaskDeleted] Tarea que se está eliminando:', tasks.find(t => t._id === taskId));
-      
-      // Actualizar el estado directamente con las tareas filtradas (sin la eliminada)
-      setTasks(filteredTasks);
-      
-      // Log para verificar que el estado se actualizó correctamente
-      setTimeout(() => {
-        console.log('[handleTaskDeleted] Verificación de estado después de eliminar:', 
-          tasks.find(t => t._id === taskId) ? 'La tarea AÚN existe en el estado' : 'La tarea ya NO existe en el estado');
-      }, 300);
-      
-      // Además, forzar una actualización de las estadísticas
-      const completedTasks = filteredTasks.filter(t => 
-        t.backendStatus === 'Completed' || 
-        STATUS_MAP_TO_BACKEND[t.status] === 'Completed' || 
-        t.status === 'Completado'
-      ).length;
-      const totalTasks = filteredTasks.length;
-      const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-      
-      // Actualizar estadísticas localmente
-      setStats(prev => ({
-        ...(prev || {}),
-        totalTareas: totalTasks,
-        tareasCompletadas: completedTasks,
-        tareasPendientes: totalTasks - completedTasks,
-        progreso: progress
-      }));
-      
-      // Actualizar estadísticas desde el servidor
-      fetchProjectStats(true);
-      
-      console.log('[handleTaskDeleted] Estado actualizado con éxito');
-    } catch (error) {
-      console.error('[handleTaskDeleted] Error al actualizar estado después de marcar tarea como eliminada:', error);
-    } finally {
-      // Cerrar el modal
+      // Cerrar primero el modal para mejorar la experiencia del usuario
       setEditTaskModalOpen(false);
       setSelectedTask(null);
+      
+      // Recargar todas las tareas para asegurar que tenemos la lista actualizada
+      await fetchProjectTasks();
+      
+      // Actualizar estadísticas desde el servidor
+      await fetchProjectStats(true);
+      
+      console.log('[handleTaskDeleted] Tareas actualizadas después de eliminar una tarea');
+    } catch (error) {
+      console.error('[handleTaskDeleted] Error al actualizar datos después de eliminar tarea:', error);
     }
   };
 
@@ -793,6 +732,20 @@ const ProjectDetailPage = () => {
   // Manejadores para los modales
   const handleDocumentUploadSuccess = (newDocument) => {
     setDocuments([newDocument, ...documents]);
+  };
+
+  // Manejador para eliminar documentos
+  const handleDeleteDocument = async (documentId) => {
+    try {
+      if (window.confirm('¿Está seguro que desea eliminar este documento? Esta acción no se puede deshacer.')) {
+        await deleteDocument(projectId, documentId);
+        // Actualizar el estado eliminando el documento
+        setDocuments(documents.filter(doc => doc._id !== documentId));
+      }
+    } catch (error) {
+      console.error('Error al eliminar documento:', error);
+      alert('No se pudo eliminar el documento. Por favor, inténtelo de nuevo.');
+    }
   };
 
   return (
@@ -931,7 +884,7 @@ const ProjectDetailPage = () => {
                                 </div>
                               </div>
                             </div>
-                            <div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
                               <Button 
                                 variant="text" 
                                 onClick={async () => {
@@ -963,6 +916,13 @@ const ProjectDetailPage = () => {
                                 }}
                               >
                                 Descargar
+                              </Button>
+                              <Button 
+                                variant="text" 
+                                color="danger"
+                                onClick={() => handleDeleteDocument(doc._id)}
+                              >
+                                Eliminar
                               </Button>
                             </div>
                           </div>
@@ -1072,51 +1032,6 @@ const ProjectDetailPage = () => {
                   </ActivityFeed>
                 </Card.Body>
               </Card>
-              
-              <div>
-                <Card>
-                  <Card.Header>
-                    <h3>Equipo del Proyecto</h3>
-                  </Card.Header>
-                  <Card.Body>
-                    <ProjectTeam>
-                      <TeamList>
-                        {project.miembros && project.miembros.length > 0 ? (
-                          project.miembros.map((member, index) => (
-                            <TeamMember key={index}>
-                              <Avatar 
-                                name={member.user ? `${member.user.firstName} ${member.user.lastName}` : 'Usuario'} 
-                                src={member.user?.profilePicture} 
-                                size="sm"
-                              />
-                              <MemberInfo>
-                                <MemberName>{member.user ? `${member.user.firstName} ${member.user.lastName}` : 'Usuario'}</MemberName>
-                                <MemberRole>{member.user?.role || 'Miembro'}</MemberRole>
-                              </MemberInfo>
-                            </TeamMember>
-                          ))
-                        ) : (
-                          <p>No hay miembros asignados a este proyecto.</p>
-                        )}
-                      </TeamList>
-                    </ProjectTeam>
-                  </Card.Body>
-                </Card>
-                
-                <Card className="mt-4">
-                  <Card.Header>
-                    <h3>Estadísticas</h3>
-                  </Card.Header>
-                  <Card.Body>
-                    <div>
-                      <p><strong>Tareas totales:</strong> {stats?.totalTareas || 0}</p>
-                      <p><strong>Tareas completadas:</strong> {stats?.tareasCompletadas || 0}</p>
-                      <p><strong>Tareas pendientes:</strong> {stats?.tareasPendientes || 0}</p>
-                      <p><strong>Días restantes:</strong> {stats?.diasRestantes || 0}</p>
-                    </div>
-                  </Card.Body>
-                </Card>
-              </div>
             </ProjectDetailGrid>
           </Tabs.Panel>
           
@@ -1160,47 +1075,16 @@ const ProjectDetailPage = () => {
             onEditSuccess={async (updatedTask) => {
               console.log('Tarea actualizada:', updatedTask);
               
-              // Actualizar la tarea en el estado local
-              setTasks(prevTasks => prevTasks.map(task => 
-                task._id === updatedTask._id ? {
-                  ...updatedTask,
-                  status: updatedTask.status,
-                  titulo: updatedTask.title || updatedTask.titulo,
-                  descripcion: updatedTask.description || updatedTask.descripcion
-                } : task
-              ));
-              
-              // Actualizar las estadísticas inmediatamente para UI responsiva
-              const updatedTasks = tasks.map(task => {
-                if (task._id === updatedTask._id) {
-                  return {
-                    ...updatedTask,
-                    status: updatedTask.status,
-                    backendStatus: STATUS_MAP_TO_BACKEND[updatedTask.status] || updatedTask.status
-                  };
-                }
-                return task;
-              });
-
-              const totalTasks = updatedTasks.length;
-              const completedTasks = updatedTasks.filter(t => 
-                t.backendStatus === 'Completed' || t.status === 'Completado'
-              ).length;
-              
-              // Actualizar stats localmente
-              setStats(prev => ({
-                ...prev,
-                totalTareas: totalTasks,
-                tareasCompletadas: completedTasks,
-                tareasPendientes: totalTasks - completedTasks,
-                progreso: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-              }));
-              
-              // Actualizar desde el servidor
               try {
+                // Recargar todas las tareas para asegurar que tenemos la lista completa actualizada
+                await fetchProjectTasks();
+                
+                // Actualizar estadísticas desde el servidor
                 await fetchProjectStats(true);
+                
+                console.log('Tareas actualizadas después de editar una tarea');
               } catch (error) {
-                console.error('Error al actualizar estadísticas después de editar tarea:', error);
+                console.error('Error al actualizar datos después de editar tarea:', error);
               }
             }}
             onDeleteSuccess={handleTaskDeleted}

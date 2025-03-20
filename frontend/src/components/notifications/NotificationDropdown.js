@@ -212,6 +212,8 @@ const NotificationDropdown = () => {
     deleteNotification 
   } = useNotifications();
   
+  console.log('Renderizando NotificationDropdown con notificaciones:', notifications);
+  
   const handleMarkAsRead = (notificationId, e) => {
     e.stopPropagation();
     markAsRead(notificationId);
@@ -228,8 +230,40 @@ const NotificationDropdown = () => {
       markAsRead(notification._id);
     }
     
-    // Aquí iría la lógica para navegar al objeto relacionado 
-    // basándose en el entityType y entityId de la notificación
+    // Navegar al objeto relacionado basado en el tipo de notificación
+    const { type } = notification;
+    let link = '';
+    
+    if (notification.actionLink) {
+      // Si hay un actionLink definido en la notificación, usarlo
+      link = notification.actionLink;
+    } else {
+      // Determinar el enlace basado en el tipo de notificación
+      switch (type) {
+        case 'task_assigned':
+          link = `/tasks/${notification.task?._id || notification.taskId}`;
+          break;
+        case 'project_assignment':
+          link = `/projects/${notification.project?._id || notification.projectId}`;
+          break;
+        case 'wiki_updated':
+          link = `/projects/${notification.project?._id || notification.projectId}/wiki`;
+          break;
+        case 'comment_added':
+        case 'comment_mention':
+          link = `/projects/${notification.project?._id || notification.projectId}/tasks/${notification.task?._id || notification.taskId}`;
+          break;
+        case 'document_uploaded':
+          link = `/projects/${notification.project?._id || notification.projectId}/documents`;
+          break;
+        default:
+          // Por defecto, redirigir a la página de notificaciones
+          link = '/notifications';
+      }
+    }
+    
+    // Cerrar el dropdown y redirigir
+    window.location.href = link;
   };
   
   return (
@@ -259,8 +293,54 @@ const NotificationDropdown = () => {
               </NotificationIcon>
               
               <NotificationContent>
-                <NotificationTitle>{notification.title}</NotificationTitle>
-                <NotificationMessage>{notification.message}</NotificationMessage>
+                <NotificationTitle>{notification.title || 'Notificación'}</NotificationTitle>
+                <NotificationMessage>
+                  {(() => {
+                    let mensaje = notification.message || notification.content;
+                    
+                    // Traducciones específicas de mensajes en inglés a español
+                    if (mensaje) {
+                      const traducciones = {
+                        "You have been assigned to task": "Has sido asignado a la tarea",
+                        "Task status changed to": "Estado de la tarea cambiado a",
+                        "New comment added to task": "Nuevo comentario añadido a la tarea",
+                        "You have been mentioned in a comment": "Has sido mencionado en un comentario",
+                        "New document uploaded": "Nuevo documento subido",
+                        "Document has been uploaded to project": "Se ha subido un documento al proyecto",
+                        "You have been added to project": "Has sido añadido al proyecto",
+                        "Project status has been updated": "El estado del proyecto ha sido actualizado",
+                        "Task deadline approaching": "La fecha límite de la tarea se acerca",
+                        "Your task is overdue": "Tu tarea está atrasada",
+                        "Wiki page has been updated": "La página Wiki ha sido actualizada"
+                      };
+                      
+                      // Reemplazar todas las coincidencias
+                      Object.entries(traducciones).forEach(([ingles, espanol]) => {
+                        if (mensaje.includes(ingles)) {
+                          mensaje = mensaje.replace(ingles, espanol);
+                        }
+                      });
+                      
+                      return mensaje;
+                    }
+                    
+                    // Mensajes predeterminados según el tipo de notificación
+                    switch (notification.type) {
+                      case 'task_assigned':
+                        return `Has sido asignado a la tarea "${notification.task?.title || 'Nueva tarea'}"`;
+                      case 'task_status_changed':
+                        return `El estado de la tarea "${notification.task?.title || 'una tarea'}" ha cambiado`;
+                      case 'project_assignment':
+                        return `Has sido añadido al proyecto "${notification.project?.name || 'Nuevo proyecto'}"`;
+                      case 'comment_added':
+                        return 'Se ha añadido un nuevo comentario';
+                      case 'document_uploaded':
+                        return 'Se ha subido un nuevo documento';
+                      default:
+                        return 'Sin detalles disponibles';
+                    }
+                  })()}
+                </NotificationMessage>
                 <NotificationTime>{formatTimeAgo(notification.createdAt)}</NotificationTime>
               </NotificationContent>
               

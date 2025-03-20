@@ -48,18 +48,65 @@ export const NotificationProvider = ({ children }) => {
       setLoading(true);
       const response = await API.get('/notifications');
       
+      console.log('Respuesta de API de notificaciones:', response.data);
+      
       // Manejar diferentes formatos de respuesta
+      let notificationsArray = [];
+      
       if (response.data && Array.isArray(response.data)) {
         // Si la respuesta es directamente un array
-        setNotifications(response.data);
+        notificationsArray = response.data;
       } else if (response.data && Array.isArray(response.data.notifications)) {
         // Si la respuesta tiene una propiedad 'notifications' que es un array
-        setNotifications(response.data.notifications);
+        notificationsArray = response.data.notifications;
       } else {
         // Si no se encuentra un array válido, establecer un array vacío
         console.warn('La respuesta de la API no contiene un array de notificaciones válido:', response.data);
-        setNotifications([]);
       }
+      
+      // Normalizar el formato de las notificaciones
+      const normalizedNotifications = notificationsArray.map(notification => {
+        // Traducir mensajes en inglés a español
+        let mensaje = notification.message || notification.content || notification.description;
+        
+        // Traducir mensajes comunes en inglés a español
+        if (mensaje) {
+          const traducciones = {
+            "You have been assigned to task": "Has sido asignado a la tarea",
+            "Task status changed to": "Estado de la tarea cambiado a",
+            "New comment added to task": "Nuevo comentario añadido a la tarea",
+            "You have been mentioned in a comment": "Has sido mencionado en un comentario",
+            "New document uploaded": "Nuevo documento subido",
+            "Document has been uploaded to project": "Se ha subido un documento al proyecto",
+            "You have been added to project": "Has sido añadido al proyecto",
+            "Project status has been updated": "El estado del proyecto ha sido actualizado",
+            "Task deadline approaching": "La fecha límite de la tarea se acerca",
+            "Your task is overdue": "Tu tarea está atrasada",
+            "Wiki page has been updated": "La página Wiki ha sido actualizada"
+          };
+          
+          // Reemplazar todas las coincidencias
+          Object.entries(traducciones).forEach(([ingles, espanol]) => {
+            if (mensaje.includes(ingles)) {
+              mensaje = mensaje.replace(ingles, espanol);
+            }
+          });
+        }
+        
+        return {
+          ...notification,
+          // Asegurar que title y message estén presentes
+          title: notification.title || notification.subject || 'Nueva notificación',
+          message: mensaje || 
+                  (notification.type === 'task_assigned' 
+                    ? `Has sido asignado a la tarea "${notification.taskName || notification.task?.title || 'Nueva tarea'}"` 
+                    : 'Sin detalles disponibles'),
+          // Asegurar que read sea booleano
+          read: Boolean(notification.read)
+        };
+      });
+      
+      setNotifications(normalizedNotifications);
       
       // Actualizar contador de no leídas
       try {
