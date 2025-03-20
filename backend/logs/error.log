@@ -1,0 +1,17 @@
+2025-03-17 09:14:35 [error]: Error getting licenses as calendar events: Schema hasn't been registered for model "user".
+Use mongoose.model(name, schema)
+2025-03-17 09:14:35 [error]: Error getting licenses as calendar events: Schema hasn't been registered for model "user".
+Use mongoose.model(name, schema)
+2025-03-17 09:14:46 [error]: Error getting licenses as calendar events: Schema hasn't been registered for model "user".
+Use mongoose.model(name, schema)
+2025-03-17 09:14:46 [error]: Error getting licenses as calendar events: Schema hasn't been registered for model "user".
+Use mongoose.model(name, schema)
+2025-03-17 09:14:54 [error]: Error getting licenses as calendar events: Schema hasn't been registered for model "user".
+Use mongoose.model(name, schema)
+2025-03-17 09:14:54 [error]: Error getting licenses as calendar events: Schema hasn't been registered for model "user".
+Use mongoose.model(name, schema)
+2025-03-18 08:39:03 [error]: Error deleting license 67d80f9cf8be48969efb3dcf: License.findByIdAndRemove is not a function
+2025-03-18 08:39:09 [error]: Error deleting license 67d80f9cf8be48969efb3dcf: License.findByIdAndRemove is not a function
+2025-03-18 10:46:04 [error]: Error deleting license 67d80f9cf8be48969efb3dcf: License.findByIdAndRemove is not a function
+2025-03-18 17:31:23 [error]: Error deleting license 67d80f9cf8be48969efb3dcf: License.findByIdAndRemove is not a function
+2025-03-19 09:29:00 [error]: Error deleting license 67d80f9cf8be48969efb3dcf: License.findByIdAndRemove is not a function
